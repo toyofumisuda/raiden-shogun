@@ -15,26 +15,26 @@ const SCENES = [
     narrowX: 0.49,               // スマホで左右を切るときに残す中心
     focus: [0.49, 0.30],         // 寄っていく先（顔）
     zoom: [1.0, 1.32],
-    range: [0, 0.62],            // この場面が映るスクロール範囲
+    range: [0, 0.45],            // この場面が映るスクロール範囲
   },
   {
     src: "img/hero2.jpg", size: [1780, 1000],
     narrowX: 0.27,
     focus: [0.33, 0.36],
     zoom: [1.06, 1.3],
-    range: [0.665, 1],
+    range: [0.63, 1],
   },
   {
     src: "img/hero3.jpg", size: [720, 480],
     narrowX: 0.519,
     focus: [0.519, 0.467],       // 巴紋の中心
     zoom: [1.0, 1.5],
-    range: [0.56, 0.665],
+    range: [0.45, 0.63],
   },
 ];
 // 絵が切り替わる位置： 立ち絵 →（目）→ 刀を抜く場面
-const SWITCH_1 = 0.56;  // A → C
-const SWITCH_2 = 0.665; // C → B（第三章の手前）
+const SWITCH_1 = 0.45;  // A → C
+const SWITCH_2 = 0.63;  // C → B（第三章の手前）
 
 const hero = document.getElementById("hero");
 const canvas = document.getElementById("heroCanvas");
@@ -233,8 +233,8 @@ vec3 sceneC(vec2 vUv) {
 
   // 星のまたたき（明るい点だけ、場所ごとにずらして明滅）
   float lum = dot(col, vec3(.3, .5, .2));
-  float twinkle = .5 + .5 * sin(t * 3. + hash(floor(P / 5.)) * 40.);
-  col += col * smoothstep(.5, .9, lum) * (1. - band) * smoothstep(70., 100., r) * twinkle * .8 * uMotion;
+  float twinkle = .5 + .5 * sin(t * 2.2 + noise(P * .02) * 6.);
+  col += col * smoothstep(.6, .95, lum) * (1. - band) * smoothstep(70., 100., r) * twinkle * .5 * uMotion;
 
   // 巴紋のまわりの光
   col += vec3(.7, .5, 1.) * exp(-r * r / 4900.) * (.22 + .14 * sin(t * 2.5)) * uMotion;
@@ -400,8 +400,8 @@ function start(imgs) {
       const m1 = clamp((p - (SWITCH_1 - 0.006)) / 0.012, 0, 1);
       const m2 = clamp((p - (SWITCH_2 - 0.006)) / 0.012, 0, 1);
       const kc = clamp((p - SWITCH_1) / (SWITCH_2 - SWITCH_1), 0, 1); // 目の場面の進み具合
-      const open = kc < 0.45 ? 0.5 - 0.5 * Math.cos((kc / 0.45) * Math.PI) : 1;
-      const bright = mix(0.6, 1.0, clamp(p / 0.14, 0, 1));
+      const open = kc < 0.4 ? 0.5 - 0.5 * Math.cos((kc / 0.4) * Math.PI) : 1;
+      const bright = mix(0.6, 1.0, clamp(p / 0.1, 0, 1));
       const f = flashAmount(p, t);
       if (ctx) {
         const { gl } = ctx;

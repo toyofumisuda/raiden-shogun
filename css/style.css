@@ -63,7 +63,7 @@ a { color: inherit; text-decoration: none; }
 .nav a:hover::after { transform: scaleX(1); }
 
 /* ===== ヒーロー ===== */
-.hero { position: relative; height: 700vh; }
+.hero { position: relative; height: 900vh; }
 .hero-sticky { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
 .hero-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .hero-shade {
