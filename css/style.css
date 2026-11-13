@@ -90,6 +90,12 @@ a { color: inherit; text-decoration: none; }
   content: ""; position: absolute; inset: -60px -80px; z-index: -1;
   background: radial-gradient(closest-side, rgba(15,13,22,.72), transparent);
 }
+/* 明るい光の柱の上に置く章は、濃い色の文字にする */
+.scene.on-light { color: #1d1036; text-shadow: 0 0 18px rgba(255,240,255,.75); }
+.scene.on-light::before { background: radial-gradient(closest-side, rgba(250,235,255,.55), transparent); }
+.scene.on-light .chapter-no { color: #5b2d9a; }
+.scene.on-light .chapter-text { color: #1d1036; }
+.chapter-title { white-space: nowrap; }
 .scene-intro { inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; }
 .scene-left { left: clamp(16px, 7vw, 120px); top: 50%; max-width: 420px; }
 .scene-right { right: clamp(16px, 7vw, 120px); top: 50%; max-width: 420px; text-align: right; }
@@ -210,6 +216,9 @@ section:not(.hero) { position: relative; z-index: 6; padding: clamp(90px, 14vw, 
   .story-grid { grid-template-columns: 1fr; }
   .spec { grid-template-columns: 1fr; }
   .scene-left, .scene-right { left: 16px; right: 16px; top: auto; bottom: 14vh; max-width: none; text-align: left; transform: translateY(var(--y, 0px)); }
+  .scene.on-light, .scene.on-light .chapter-text { color: var(--ink); text-shadow: 0 2px 18px rgba(0,0,0,.7); }
+  .scene.on-light .chapter-no { color: var(--gold); }
+  .scene.on-light::before { background: radial-gradient(closest-side, rgba(15,13,22,.72), transparent); }
   .progress { right: 10px; }
   .progress li { font-size: 0; padding-right: 8px; }
 }

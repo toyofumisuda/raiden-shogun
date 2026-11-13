@@ -1,14 +1,30 @@
 // 雷電将軍サイト
-// しくみ: AIで4倍に拡大した1枚絵を WebGL で描き、
-//   ・袖・おさげ・赤い紐・裾を、場所ごとに風で揺らす（シェーダーで画素をずらす）
-//   ・手元に雷の筋と光を重ねる
-//   ・スクロール量に合わせてカメラが顔へ寄り、章の切り替えで稲光が走る
+// しくみ: AIで拡大した2枚の絵を WebGL で描く。
+//   場面A（第一章・第二章）: 立ち絵。袖・おさげ・赤い紐・裾が風で揺れ、手元に雷が走る
+//   場面B（第三章・第四章）: 元素爆発で刀を抜く場面。髪と裾がなびき、刀と光の柱が輝く
+//   第三章に入る瞬間、稲光とともに A から B へ切り替わる。
+//   スクロール量に合わせてカメラが寄り、章の切り替えでも稲光が走る。
 
-const IMG_W = 1480, IMG_H = 832; // 座標を決めるときの基準サイズ（元画像の2倍）
-const FOCUS = [0.49, 0.30];       // 寄っていく先（顔のあたり）
-const FOCUS_X_NARROW = 0.49;      // スマホで左右を切るときに残す中心
-const ZOOM_MAX = 0.38;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// 各場面の設定。size は座標を決めたときの基準サイズ（px）
+const SCENES = [
+  {
+    src: "img/hero.jpg", size: [1480, 832],
+    narrowX: 0.49,               // スマホで左右を切るときに残す中心
+    focus: [0.49, 0.30],         // 寄っていく先（顔）
+    zoom: [1.0, 1.32],
+    range: [0, 0.62],            // この場面が映るスクロール範囲
+  },
+  {
+    src: "img/hero2.jpg", size: [1780, 1000],
+    narrowX: 0.27,
+    focus: [0.33, 0.36],
+    zoom: [1.06, 1.3],
+    range: [0.6, 1],
+  },
+];
+const SWITCH_AT = 0.615; // A→B に切り替わる位置（第三章の始まり）
 
 const hero = document.getElementById("hero");
 const canvas = document.getElementById("heroCanvas");
@@ -21,7 +37,11 @@ const loaderNum = document.getElementById("loaderNum");
 document.body.classList.add("loading");
 
 /* ---------- 1. 画像を読み込む（進み具合を%で表示） ---------- */
-async function loadImage(url) {
+const progress = SCENES.map(() => 0);
+const showProgress = () =>
+  (loaderNum.textContent = Math.min(99, Math.round((progress.reduce((a, b) => a + b, 0) / SCENES.length) * 100)));
+
+async function loadImage(url, i) {
   try {
     const res = await fetch(url);
     const total = Number(res.headers.get("content-length")) || 0;
@@ -33,13 +53,12 @@ async function loadImage(url) {
       if (done) break;
       chunks.push(value);
       got += value.length;
-      if (total) loaderNum.textContent = Math.min(99, Math.round((got / total) * 100));
+      if (total) { progress[i] = got / total; showProgress(); }
     }
-    const blob = new Blob(chunks, { type: "image/jpeg" });
-    return await createImageBitmap(blob);
+    return await createImageBitmap(new Blob(chunks, { type: "image/jpeg" }));
   } catch {
     // fetch が使えないとき（ファイルを直接開いた場合など）
-    return new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.src = url; });
+    return new Promise((ok) => { const im = new Image(); im.onload = () => ok(im); im.src = url; });
   }
 }
 
@@ -56,13 +75,12 @@ const FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outColor;
-uniform sampler2D uTex;
-uniform vec4 uRect;     // 画面に映す画像の範囲（0〜1）
-uniform float uTime;
-uniform float uMotion;  // 揺れの強さ（動きを減らす設定なら0）
-uniform float uBright;
-uniform float uFlash;
-const vec2 SIZE = vec2(${IMG_W}.0, ${IMG_H}.0);
+uniform sampler2D uTexA, uTexB;
+uniform vec4 uRectA, uRectB;  // それぞれの絵の、画面に映す範囲（0〜1）
+uniform float uMix;           // 0 = 場面A、1 = 場面B
+uniform float uTime, uMotion, uBright, uFlash;
+const vec2 SIZE_A = vec2(${SCENES[0].size[0]}.0, ${SCENES[0].size[1]}.0);
+const vec2 SIZE_B = vec2(${SCENES[1].size[0]}.0, ${SCENES[1].size[1]}.0);
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -93,58 +111,101 @@ vec2 sway(vec2 P, vec2 c, vec2 r, vec2 anchor, vec2 dir, float amp, float speed,
   return normalize(dir) * amp * m * reach * w;
 }
 
-void main() {
-  vec2 uv = uRect.xy + vUv * uRect.zw;
-  vec2 P = uv * SIZE;  // 基準サイズでの座標（px）
-  float t = uTime;
-
-  vec2 d = vec2(0.);
-  // 左の大きな袖
-  d += sway(P, vec2(465., 400.), vec2(80., 175.), vec2(450., 230.), vec2(1., .15), 9., 1.3, 0.);
-  // おさげ
-  d += sway(P, vec2(575., 370.), vec2(45., 115.), vec2(590., 255.), vec2(1., .1), 6., 1.6, 1.);
-  // 右の袖
-  d += sway(P, vec2(985., 320.), vec2(140., 110.), vec2(860., 250.), vec2(.3, 1.), 10., 1.2, 2.);
-  // 赤い紐
-  d += sway(P, vec2(900., 305.), vec2(90., 70.), vec2(830., 270.), vec2(.2, 1.), 7., 2.1, .5);
-  // 髪の先の飾り
-  d += sway(P, vec2(900., 435.), vec2(75., 55.), vec2(850., 400.), vec2(1., .4), 8., 1.7, 3.);
-  // 右下へ流れる長い裾
-  d += sway(P, vec2(950., 525.), vec2(195., 95.), vec2(780., 480.), vec2(.1, 1.), 9., 1.1, 1.5);
-  // 脚の間に垂れる前垂れ
-  d += sway(P, vec2(640., 700.), vec2(55., 135.), vec2(630., 560.), vec2(1., 0.), 6., 1.4, 2.6);
-  // 呼吸（胸元がわずかに上下する）
-  d += (P - vec2(720., 620.)) * .006 * sin(t * 1.4) * region(P, vec2(720., 320.), vec2(130., 160.));
-
-  d *= uMotion;
-  vec2 suv = clamp(uv - d / SIZE, 0., 1.);
-  vec3 col = texture(uTex, suv).rgb * uBright;
-
-  // 手元の雷：細い筋がちらちら走る
-  vec2 hp = (P - vec2(690., 212.)) / 95.;
+// 雷の筋（中心 c、半径 r の円の中にちらちら走る）
+vec3 sparks(vec2 P, vec2 c, float r, float seed, float strength) {
+  vec2 hp = (P - c) / r;
   float rr = length(hp);
-  if (rr < 1.4) {
-    float flick = .55 + .45 * step(.45, noise(vec2(t * 9., 3.)));
-    float ridge = 1. - abs(fbm(hp * 3.2 + vec2(t * 1.9, -t * 1.4)) - .5) * 2.;
-    float vein = pow(ridge, 34.) * smoothstep(1.2, .1, rr);
-    float glow = exp(-rr * rr * 5.) * (.32 + .12 * sin(t * 3.1));
-    col += (vec3(.82, .58, 1.) * vein * 1.6 * flick + vec3(.55, .32, 1.) * glow) * uMotion;
-  }
-  // 刀を持つ手の上の光
-  vec2 sp = (P - vec2(640., 95.)) / vec2(40., 70.);
+  if (rr > 1.4) return vec3(0.);
+  float t = uTime;
+  float flick = .55 + .45 * step(.45, noise(vec2(t * 9., seed)));
+  float ridge = 1. - abs(fbm(hp * 3.2 + vec2(t * 1.9 + seed, -t * 1.4)) - .5) * 2.;
+  float vein = pow(ridge, 34.) * smoothstep(1.2, .1, rr);
+  float glow = exp(-rr * rr * 5.) * (.3 + .12 * sin(t * 3.1 + seed));
+  return (vec3(.82, .58, 1.) * vein * 1.6 * flick + vec3(.55, .32, 1.) * glow) * strength;
+}
+
+// ---- 場面A：立ち絵 ----
+vec3 sceneA(vec2 vUv) {
+  vec2 uv = uRectA.xy + vUv * uRectA.zw;
+  vec2 P = uv * SIZE_A;
+  float t = uTime;
+  vec2 d = vec2(0.);
+  d += sway(P, vec2(465., 400.), vec2(80., 175.), vec2(450., 230.), vec2(1., .15), 9., 1.3, 0.);   // 左の袖
+  d += sway(P, vec2(575., 370.), vec2(45., 115.), vec2(590., 255.), vec2(1., .1), 6., 1.6, 1.);    // おさげ
+  d += sway(P, vec2(985., 320.), vec2(140., 110.), vec2(860., 250.), vec2(.3, 1.), 10., 1.2, 2.);  // 右の袖
+  d += sway(P, vec2(900., 305.), vec2(90., 70.), vec2(830., 270.), vec2(.2, 1.), 7., 2.1, .5);     // 赤い紐
+  d += sway(P, vec2(900., 435.), vec2(75., 55.), vec2(850., 400.), vec2(1., .4), 8., 1.7, 3.);     // 髪先の飾り
+  d += sway(P, vec2(950., 525.), vec2(195., 95.), vec2(780., 480.), vec2(.1, 1.), 9., 1.1, 1.5);   // 長い裾
+  d += sway(P, vec2(640., 700.), vec2(55., 135.), vec2(630., 560.), vec2(1., 0.), 6., 1.4, 2.6);   // 前垂れ
+  d += (P - vec2(720., 620.)) * .006 * sin(t * 1.4) * region(P, vec2(720., 320.), vec2(130., 160.)); // 呼吸
+  d *= uMotion;
+
+  vec3 col = texture(uTexA, clamp(uv - d / SIZE_A, 0., 1.)).rgb;
+  col += sparks(P, vec2(690., 212.), 95., 3., uMotion);  // 手元の雷
+  vec2 sp = (P - vec2(640., 95.)) / vec2(40., 70.);       // 刀を持つ手の上の光
   col += vec3(.6, .4, 1.) * exp(-dot(sp, sp) * 2.) * (.18 + .1 * sin(t * 2.3 + 1.)) * uMotion;
-  // 月の光
-  vec2 mp = (P - vec2(760., 35.)) / 90.;
+  vec2 mp = (P - vec2(760., 35.)) / 90.;                  // 月の光
   col += vec3(.5, .4, .9) * exp(-dot(mp, mp) * 2.5) * (.12 + .06 * sin(t * .9));
+  return col;
+}
+
+// ---- 場面B：刀を抜く ----
+vec3 sceneB(vec2 vUv) {
+  vec2 uv = uRectB.xy + vUv * uRectB.zw;
+  vec2 P = uv * SIZE_B;
+  float t = uTime;
+  vec2 d = vec2(0.);
+  d += sway(P, vec2(640., 330.), vec2(180., 170.), vec2(450., 190.), vec2(1., .25), 11., 1.5, 0.);  // 右へなびく髪
+  d += sway(P, vec2(930., 320.), vec2(70., 170.), vec2(930., 170.), vec2(1., .2), 7., 1.9, 1.2);    // 飾り紐
+  d += sway(P, vec2(760., 720.), vec2(300., 180.), vec2(450., 560.), vec2(.7, 1.), 13., 1.3, 2.);   // 流れる裾
+  d += sway(P, vec2(200., 620.), vec2(90., 160.), vec2(260., 470.), vec2(-.3, 1.), 6., 1.6, .7);    // 左の袖
+  // 光の柱のゆらめき（横に細かく震える）
+  float pillar = smoothstep(1020., 1250., P.x);
+  d.x += (noise(vec2(P.y * .01, t * 3.)) - .5) * 10. * pillar;
+  d *= uMotion;
+
+  vec3 col = texture(uTexB, clamp(uv - d / SIZE_B, 0., 1.)).rgb;
+
+  // 光の柱：下から上へ流れる筋
+  float streak = noise(vec2(P.x * .025, P.y * .003 + t * 1.8)) * noise(vec2(P.x * .06, P.y * .002 + t * 2.6));
+  col += vec3(.75, .5, 1.) * pow(streak, 2.) * .7 * pillar * uMotion;
+
+  // 刀身を走る光（つばから切っ先へ）
+  vec2 a = vec2(960., 712.), b = vec2(1780., 975.);
+  vec2 ab = b - a;
+  float s = clamp(dot(P - a, ab) / dot(ab, ab), 0., 1.);
+  float distL = length(P - (a + ab * s));
+  float glintPos = fract(t * .35);
+  float glint = exp(-pow((s - glintPos) * 9., 2.)) * exp(-distL * distL / 60.);
+  col += vec3(1., .85, 1.) * glint * 1.3 * uMotion;
+  col += vec3(.6, .4, 1.) * exp(-distL * distL / 900.) * (.12 + .08 * sin(t * 5.)) * step(.001, s) * uMotion;
+
+  // 雷の筋：右手の巴の玉、左手のまわり、髪の上を走る稲妻
+  col += sparks(P, vec2(920., 470.), 110., 7., uMotion);
+  col += sparks(P, vec2(235., 440.), 95., 11., uMotion * .9);
+  col += sparks(P, vec2(800., 300.), 120., 5., uMotion * .7);
+
+  // 目の光
+  vec2 e1 = (P - vec2(392., 243.)) / 22., e2 = (P - vec2(452., 243.)) / 22.;
+  float eye = exp(-dot(e1, e1) * 2.) + exp(-dot(e2, e2) * 2.);
+  col += vec3(.7, .45, 1.) * eye * (.25 + .15 * sin(t * 2.)) * uMotion;
+  return col;
+}
+
+void main() {
+  vec3 col;
+  if (uMix <= .001) col = sceneA(vUv);
+  else if (uMix >= .999) col = sceneB(vUv);
+  else col = mix(sceneA(vUv), sceneB(vUv), uMix);
+  col *= uBright;
 
   // 稲光（画面全体が紫に光る）
   vec2 fp = vUv - vec2(.5, .3);
   col += vec3(.55, .35, 1.) * uFlash * (1. - smoothstep(0., .9, length(fp)));
-
   outColor = vec4(col, 1.);
 }`;
 
-function makeGL(img) {
+function makeGL(imgs) {
   const gl = canvas.getContext("webgl2", { antialias: false, alpha: false });
   if (!gl) return null;
   const sh = (type, src) => {
@@ -167,38 +228,44 @@ function makeGL(img) {
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-  gl.generateMipmap(gl.TEXTURE_2D); // 縮小表示でもギザギザしないように
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  imgs.forEach((img, i) => {
+    gl.activeTexture(gl.TEXTURE0 + i);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.generateMipmap(gl.TEXTURE_2D); // 縮小表示でもギザギザしないように
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  });
 
   const u = (n) => gl.getUniformLocation(prog, n);
+  gl.uniform1i(u("uTexA"), 0);
+  gl.uniform1i(u("uTexB"), 1);
   return {
     gl,
-    uRect: u("uRect"), uTime: u("uTime"), uMotion: u("uMotion"),
-    uBright: u("uBright"), uFlash: u("uFlash"),
+    uRectA: u("uRectA"), uRectB: u("uRectB"), uMix: u("uMix"),
+    uTime: u("uTime"), uMotion: u("uMotion"), uBright: u("uBright"), uFlash: u("uFlash"),
   };
 }
 
-/* ---------- 3. カメラ：画像のどこを画面に映すか ---------- */
+/* ---------- 3. カメラ：絵のどこを画面に映すか ---------- */
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const mix = (a, b, k) => a + (b - a) * k;
 
-function cameraRect(p, mouse) {
-  const imgAspect = IMG_W / IMG_H;
+function cameraRect(sc, p, mouse) {
+  const imgAspect = sc.size[0] / sc.size[1];
   const scrAspect = canvas.clientWidth / canvas.clientHeight;
   let w = 1, h = 1, cx = 0.5;
   if (scrAspect > imgAspect) h = imgAspect / scrAspect;
-  else { w = scrAspect / imgAspect; cx = FOCUS_X_NARROW; }
-  const k = Math.pow(p, 1.5);
-  const z = 1 + ZOOM_MAX * k;
+  else { w = scrAspect / imgAspect; cx = sc.narrowX; }
+  const k = Math.pow(clamp((p - sc.range[0]) / (sc.range[1] - sc.range[0]), 0, 1), 1.4);
+  const z = mix(sc.zoom[0], sc.zoom[1], k);
   w /= z; h /= z;
-  cx = mix(cx, FOCUS[0], k) + mouse.x * 0.008;
-  let cy = mix(0.5, FOCUS[1], k) + mouse.y * 0.008;
+  const narrow = scrAspect <= imgAspect;
+  cx = mix(cx, narrow ? sc.narrowX : sc.focus[0], k) + mouse.x * 0.008;
+  let cy = mix(0.5, sc.focus[1], k) + mouse.y * 0.008;
   cx = clamp(cx, w / 2, 1 - w / 2);
   cy = clamp(cy, h / 2, 1 - h / 2);
   return [cx - w / 2, cy - h / 2, w, h];
@@ -241,15 +308,16 @@ function updateText(p) {
 function flashAmount(p, t) {
   if (reduceMotion) return 0;
   const chapter = Math.max(...dots.map((d) => Math.exp(-Math.pow((p - parseFloat(d.dataset.at)) * 60, 2))));
+  const sw = Math.exp(-Math.pow((p - SWITCH_AT) * 45, 2)) * 1.4; // 絵が切り替わるときは強く
   const cycle = t % 7;
   const ambient = cycle > 6.2 ? Math.max(0, Math.sin((cycle - 6.2) * 40)) * 0.25 * Math.exp(-(cycle - 6.2) * 4) : 0;
-  return Math.max(chapter, ambient);
+  return Math.max(chapter, sw, ambient);
 }
 
 /* ---------- 5. 毎フレームの描画 ---------- */
-function start(img) {
+function start(imgs) {
   let ctx;
-  try { ctx = makeGL(img); } catch (e) { console.warn(e); ctx = null; }
+  try { ctx = makeGL(imgs); } catch (e) { console.warn(e); ctx = null; }
   const ctx2d = ctx ? null : canvas.getContext("2d");
 
   let p = heroProgress();
@@ -267,15 +335,18 @@ function start(img) {
     mouse.x += (mouseTarget.x - mouse.x) * 0.05;
     mouse.y += (mouseTarget.y - mouse.y) * 0.05;
 
-    const heroVisible = hero.getBoundingClientRect().bottom > 0;
-    if (heroVisible) {
-      const rect = cameraRect(p, mouse);
+    if (hero.getBoundingClientRect().bottom > 0) {
+      const rectA = cameraRect(SCENES[0], p, mouse);
+      const rectB = cameraRect(SCENES[1], p, mouse);
+      const m = clamp((p - (SWITCH_AT - 0.008)) / 0.016, 0, 1);
       const bright = mix(0.6, 1.0, clamp(p / 0.14, 0, 1));
       const f = flashAmount(p, t);
       if (ctx) {
         const { gl } = ctx;
         gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.uniform4f(ctx.uRect, ...rect);
+        gl.uniform4f(ctx.uRectA, ...rectA);
+        gl.uniform4f(ctx.uRectB, ...rectB);
+        gl.uniform1f(ctx.uMix, m);
         gl.uniform1f(ctx.uTime, t);
         gl.uniform1f(ctx.uMotion, reduceMotion ? 0 : 1);
         gl.uniform1f(ctx.uBright, bright);
@@ -283,10 +354,11 @@ function start(img) {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       } else {
         // WebGL が使えないときは止まった絵だけ描く
-        const W = img.width, H = img.height;
-        ctx2d.drawImage(img, rect[0] * W, rect[1] * H, rect[2] * W, rect[3] * H, 0, 0, canvas.width, canvas.height);
+        const img = imgs[m < 0.5 ? 0 : 1], r = m < 0.5 ? rectA : rectB;
+        ctx2d.drawImage(img, r[0] * img.width, r[1] * img.height, r[2] * img.width, r[3] * img.height,
+          0, 0, canvas.width, canvas.height);
       }
-      flash.style.opacity = (f * 0.7).toFixed(3);
+      flash.style.opacity = Math.min(1, f * 0.7).toFixed(3);
       updateText(p);
     }
     requestAnimationFrame(frame);
@@ -363,10 +435,10 @@ function startPetals() {
 addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
-loadImage("img/hero.jpg").then((img) => {
+Promise.all(SCENES.map((s, i) => loadImage(s.src, i))).then((imgs) => {
   loaderNum.textContent = 100;
   resizeCanvas();
-  start(img);
+  start(imgs);
   loader.classList.add("done");
   document.body.classList.remove("loading");
   if (!reduceMotion) startPetals();
