@@ -1,8 +1,9 @@
 // 雷電将軍サイト
-// しくみ: AIで拡大した2枚の絵を WebGL で描く。
+// しくみ: AIで拡大した3枚の絵を WebGL で描く。
 //   場面A（第一章・第二章）: 立ち絵。袖・おさげ・赤い紐・裾が風で揺れ、手元に雷が走る
+//   場面C（間奏）        : 巴紋の目。まぶたが開き、巴紋が回り、光の帯が流れる
 //   場面B（第三章・第四章）: 元素爆発で刀を抜く場面。髪と裾がなびき、刀と光の柱が輝く
-//   第三章に入る瞬間、稲光とともに A から B へ切り替わる。
+//   A → C → B の切り替わりでは、稲光が走る。
 //   スクロール量に合わせてカメラが寄り、章の切り替えでも稲光が走る。
 
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -21,10 +22,19 @@ const SCENES = [
     narrowX: 0.27,
     focus: [0.33, 0.36],
     zoom: [1.06, 1.3],
-    range: [0.6, 1],
+    range: [0.665, 1],
+  },
+  {
+    src: "img/hero3.jpg", size: [720, 480],
+    narrowX: 0.519,
+    focus: [0.519, 0.467],       // 巴紋の中心
+    zoom: [1.0, 1.5],
+    range: [0.56, 0.665],
   },
 ];
-const SWITCH_AT = 0.615; // A→B に切り替わる位置（第三章の始まり）
+// 絵が切り替わる位置： 立ち絵 →（目）→ 刀を抜く場面
+const SWITCH_1 = 0.56;  // A → C
+const SWITCH_2 = 0.665; // C → B（第三章の手前）
 
 const hero = document.getElementById("hero");
 const canvas = document.getElementById("heroCanvas");
@@ -75,12 +85,16 @@ const FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outColor;
-uniform sampler2D uTexA, uTexB;
-uniform vec4 uRectA, uRectB;  // それぞれの絵の、画面に映す範囲（0〜1）
-uniform float uMix;           // 0 = 場面A、1 = 場面B
+uniform sampler2D uTexA, uTexB, uTexC;
+uniform vec4 uRectA, uRectB, uRectC;  // それぞれの絵の、画面に映す範囲（0〜1）
+uniform float uMix1;  // 0 = 場面A、1 = 場面C
+uniform float uMix2;  // 0 = 場面C、1 = 場面B
+uniform float uOpen;  // 目の開き具合（0 = 閉じている）
+uniform float uSpin;  // 巴紋の回転角
 uniform float uTime, uMotion, uBright, uFlash;
 const vec2 SIZE_A = vec2(${SCENES[0].size[0]}.0, ${SCENES[0].size[1]}.0);
 const vec2 SIZE_B = vec2(${SCENES[1].size[0]}.0, ${SCENES[1].size[1]}.0);
+const vec2 SIZE_C = vec2(${SCENES[2].size[0]}.0, ${SCENES[2].size[1]}.0);
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -192,11 +206,52 @@ vec3 sceneB(vec2 vUv) {
   return col;
 }
 
+// ---- 場面C：巴紋の目 ----
+vec3 sceneC(vec2 vUv) {
+  vec2 uv = uRectC.xy + vUv * uRectC.zw;
+  vec2 P = uv * SIZE_C;
+  float t = uTime;
+  vec2 c = vec2(374., 224.);  // 巴紋の中心
+  vec2 q = P - c;
+  float r = length(q);
+
+  // 巴紋を回す（瞳の内側だけ。外側へ行くほど回転を弱めてなじませる）
+  float rot = uSpin * (1. - smoothstep(52., 80., r));
+  float cs = cos(rot), sn = sin(rot);
+  vec2 Pr = c + mat2(cs, -sn, sn, cs) * q;
+
+  // 目のまわりの光の帯をゆらめかせる
+  float band = region(P, vec2(370., 225.), vec2(340., 150.)) * smoothstep(70., 110., r);
+  Pr.x += (noise(vec2(P.y * .05, t * 2.)) - .5) * 8. * band * uMotion;
+  Pr.y += sin(P.x * .03 - t * 3.) * 2. * band * uMotion;
+
+  vec3 col = texture(uTexC, clamp(Pr / SIZE_C, 0., 1.)).rgb;
+
+  // 光の帯の上を、明るい筋が流れていく
+  float flow = noise(vec2(P.x * .012 - t * 1.4, P.y * .09));
+  col += vec3(.65, .5, 1.) * pow(flow, 3.) * band * .7 * uMotion;
+
+  // 星のまたたき（明るい点だけ、場所ごとにずらして明滅）
+  float lum = dot(col, vec3(.3, .5, .2));
+  float twinkle = .5 + .5 * sin(t * 3. + hash(floor(P / 5.)) * 40.);
+  col += col * smoothstep(.5, .9, lum) * (1. - band) * smoothstep(70., 100., r) * twinkle * .8 * uMotion;
+
+  // 巴紋のまわりの光
+  col += vec3(.7, .5, 1.) * exp(-r * r / 4900.) * (.22 + .14 * sin(t * 2.5)) * uMotion;
+
+  // まぶた：上下から閉じた黒が、目の形に開いていく
+  float hx = max(1. - pow((P.x - 370.) / 430., 2.), 0.);
+  float lid = uOpen * 170. * hx + smoothstep(.75, 1., uOpen) * 600.;
+  col *= 1. - smoothstep(lid - 25., lid, abs(P.y - 224.));
+  return col;
+}
+
 void main() {
   vec3 col;
-  if (uMix <= .001) col = sceneA(vUv);
-  else if (uMix >= .999) col = sceneB(vUv);
-  else col = mix(sceneA(vUv), sceneB(vUv), uMix);
+  if (uMix2 >= .999) col = sceneB(vUv);
+  else if (uMix1 <= .001) col = sceneA(vUv);
+  else if (uMix2 <= .001) col = uMix1 >= .999 ? sceneC(vUv) : mix(sceneA(vUv), sceneC(vUv), uMix1);
+  else col = mix(sceneC(vUv), sceneB(vUv), uMix2);
   col *= uBright;
 
   // 稲光（画面全体が紫に光る）
@@ -243,9 +298,11 @@ function makeGL(imgs) {
   const u = (n) => gl.getUniformLocation(prog, n);
   gl.uniform1i(u("uTexA"), 0);
   gl.uniform1i(u("uTexB"), 1);
+  gl.uniform1i(u("uTexC"), 2);
   return {
     gl,
-    uRectA: u("uRectA"), uRectB: u("uRectB"), uMix: u("uMix"),
+    uRectA: u("uRectA"), uRectB: u("uRectB"), uRectC: u("uRectC"),
+    uMix1: u("uMix1"), uMix2: u("uMix2"), uOpen: u("uOpen"), uSpin: u("uSpin"),
     uTime: u("uTime"), uMotion: u("uMotion"), uBright: u("uBright"), uFlash: u("uFlash"),
   };
 }
@@ -308,7 +365,8 @@ function updateText(p) {
 function flashAmount(p, t) {
   if (reduceMotion) return 0;
   const chapter = Math.max(...dots.map((d) => Math.exp(-Math.pow((p - parseFloat(d.dataset.at)) * 60, 2))));
-  const sw = Math.exp(-Math.pow((p - SWITCH_AT) * 45, 2)) * 1.4; // 絵が切り替わるときは強く
+  // 絵が切り替わるときは強く
+  const sw = Math.max(...[SWITCH_1, SWITCH_2].map((s) => Math.exp(-Math.pow((p - s) * 45, 2)))) * 1.4;
   const cycle = t % 7;
   const ambient = cycle > 6.2 ? Math.max(0, Math.sin((cycle - 6.2) * 40)) * 0.25 * Math.exp(-(cycle - 6.2) * 4) : 0;
   return Math.max(chapter, sw, ambient);
@@ -338,7 +396,11 @@ function start(imgs) {
     if (hero.getBoundingClientRect().bottom > 0) {
       const rectA = cameraRect(SCENES[0], p, mouse);
       const rectB = cameraRect(SCENES[1], p, mouse);
-      const m = clamp((p - (SWITCH_AT - 0.008)) / 0.016, 0, 1);
+      const rectC = cameraRect(SCENES[2], p, mouse);
+      const m1 = clamp((p - (SWITCH_1 - 0.006)) / 0.012, 0, 1);
+      const m2 = clamp((p - (SWITCH_2 - 0.006)) / 0.012, 0, 1);
+      const kc = clamp((p - SWITCH_1) / (SWITCH_2 - SWITCH_1), 0, 1); // 目の場面の進み具合
+      const open = kc < 0.45 ? 0.5 - 0.5 * Math.cos((kc / 0.45) * Math.PI) : 1;
       const bright = mix(0.6, 1.0, clamp(p / 0.14, 0, 1));
       const f = flashAmount(p, t);
       if (ctx) {
@@ -346,7 +408,11 @@ function start(imgs) {
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.uniform4f(ctx.uRectA, ...rectA);
         gl.uniform4f(ctx.uRectB, ...rectB);
-        gl.uniform1f(ctx.uMix, m);
+        gl.uniform4f(ctx.uRectC, ...rectC);
+        gl.uniform1f(ctx.uMix1, m1);
+        gl.uniform1f(ctx.uMix2, m2);
+        gl.uniform1f(ctx.uOpen, reduceMotion ? 1 : open);
+        gl.uniform1f(ctx.uSpin, t * 0.5 + kc * 4.0); // 時間で回り、スクロールでさらに回る
         gl.uniform1f(ctx.uTime, t);
         gl.uniform1f(ctx.uMotion, reduceMotion ? 0 : 1);
         gl.uniform1f(ctx.uBright, bright);
@@ -354,7 +420,8 @@ function start(imgs) {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       } else {
         // WebGL が使えないときは止まった絵だけ描く
-        const img = imgs[m < 0.5 ? 0 : 1], r = m < 0.5 ? rectA : rectB;
+        const i = m2 >= 0.5 ? 1 : m1 >= 0.5 ? 2 : 0;
+        const img = imgs[i], r = [rectA, rectB, rectC][i];
         ctx2d.drawImage(img, r[0] * img.width, r[1] * img.height, r[2] * img.width, r[3] * img.height,
           0, 0, canvas.width, canvas.height);
       }

@@ -17,11 +17,16 @@ ffmpeg -v error -y -i "$SRC" -vf "delogo=x=590:y=394:w=148:h=21,delogo=x=20:y=20
 ffmpeg -v error -y -i "$TMP/up.png" -q:v 3 img/hero.jpg
 ffmpeg -v error -y -i "$TMP/up.png" -vf "crop=1320:1664:820:0,scale=900:-1:flags=lanczos" -q:v 3 img/portrait.jpg
 
-# 4) 2枚目（元素爆発の場面 img/source2.png）は2倍に拡大して幅2960pxにそろえる
+# 4) 2枚目（刀を抜く場面 img/source2.png）は4倍に拡大してから幅3200pxに縮める（細部が締まる）
 if [ -f img/source2.png ]; then
-  "$APP/bin/upscayl-bin" -i img/source2.png -o "$TMP/up2.png" -m "$APP/models" -n digital-art-4x -s 2
-  ffmpeg -v error -y -i "$TMP/up2.png" -vf "scale=2960:-2:flags=lanczos" -q:v 3 img/hero2.jpg
+  "$APP/bin/upscayl-bin" -i img/source2.png -o "$TMP/up2.png" -m "$APP/models" -n digital-art-4x -s 4
+  ffmpeg -v error -y -i "$TMP/up2.png" -vf "scale=3200:-2:flags=lanczos" -q:v 3 img/hero2.jpg
+fi
+# 5) 3枚目（巴紋の目 img/source3.png）は4倍に拡大
+if [ -f img/source3.png ]; then
+  "$APP/bin/upscayl-bin" -i img/source3.png -o "$TMP/up3.png" -m "$APP/models" -n digital-art-4x -s 4
+  ffmpeg -v error -y -i "$TMP/up3.png" -q:v 3 img/hero3.jpg
 fi
 
 rm -rf "$TMP"
-echo "img/hero.jpg・img/hero2.jpg・img/portrait.jpg を作りました"
+echo "img/hero.jpg・hero2.jpg・hero3.jpg・portrait.jpg を作りました"
