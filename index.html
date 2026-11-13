@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>雷電将軍 ― 永遠の章【実習】</title>
+  <meta name="description" content="雷電将軍のキャラクター紹介サイト（非公式・授業の実習制作）">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Shippori+Mincho+B1:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- 読み込み画面 -->
+  <div class="loader" id="loader">
+    <svg class="mark spin" viewBox="0 0 100 100" aria-hidden="true"><use href="#tomoe"/></svg>
+    <p class="loader-num"><span id="loaderNum">0</span>%</p>
+  </div>
+
+  <!-- 巴紋（自作のシンボル） -->
+  <svg width="0" height="0" style="position:absolute">
+    <symbol id="tomoe" viewBox="0 0 100 100">
+      <g fill="currentColor">
+        <path id="tm" d="M50 50 C 50 28, 70 18, 86 26 C 74 26, 62 34, 62 48 C 62 55, 57 60, 50 60 C 44 60, 40 55, 40 50 Z"/>
+        <use href="#tm" transform="rotate(120 50 50)"/>
+        <use href="#tm" transform="rotate(240 50 50)"/>
+      </g>
+      <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="2.5"/>
+    </symbol>
+  </svg>
+
+  <!-- 舞う花びら -->
+  <canvas class="petals" id="petals" aria-hidden="true"></canvas>
+
+  <header class="header">
+    <a class="logo" href="#top">
+      <svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><use href="#tomoe"/></svg>
+      <span>RAIDEN&nbsp;SHOGUN</span>
+    </a>
+    <nav class="nav">
+      <a href="#story">物語</a>
+      <a href="#profile">プロフィール</a>
+      <a href="#skills">戦技</a>
+      <a href="#vow">誓い</a>
+    </nav>
+  </header>
+
+  <main id="top">
+
+    <!-- ===== ヒーロー：スクロールでコマ送り ===== -->
+    <section class="hero" id="hero">
+      <div class="hero-sticky">
+        <canvas class="hero-canvas" id="heroCanvas"></canvas>
+        <div class="hero-shade"></div>
+        <div class="flash" id="flash"></div>
+
+        <!-- 序 -->
+        <div class="scene scene-intro" data-from="0" data-to="0.16">
+          <p class="eyebrow">Inazuma ・ The Eternal</p>
+          <h1 class="title">
+            <span class="title-en">Raiden Shogun</span>
+            <span class="title-ja">雷電将軍</span>
+          </h1>
+          <p class="scroll-hint"><span></span>Scroll</p>
+        </div>
+
+        <!-- 四つの章 -->
+        <div class="scene scene-left" data-from="0.18" data-to="0.38">
+          <p class="chapter-no">第一章</p>
+          <h2 class="chapter-title">永遠</h2>
+          <p class="chapter-text">移ろうものは、いつか失われる。<br>だから彼女は、変わらぬ国を望んだ。</p>
+        </div>
+        <div class="scene scene-right" data-from="0.40" data-to="0.60">
+          <p class="chapter-no">第二章</p>
+          <h2 class="chapter-title">一心浄土</h2>
+          <p class="chapter-text">意識の奥にひらく、静かな世界。<br>刀を磨き、ただひとり時を見つめる。</p>
+        </div>
+        <div class="scene scene-left" data-from="0.62" data-to="0.80">
+          <p class="chapter-no">第三章</p>
+          <h2 class="chapter-title">無想の一太刀</h2>
+          <p class="chapter-text">天を裂き、雲を断つ。<br>稲妻の名は、その一閃から生まれた。</p>
+        </div>
+        <div class="scene scene-center" data-from="0.83" data-to="1.01">
+          <p class="chapter-no">第四章</p>
+          <h2 class="chapter-title big">雷光</h2>
+          <p class="chapter-text">永遠は、止まることではない。<br>人と共に、歩みつづけること。</p>
+        </div>
+
+        <!-- 進み具合 -->
+        <ol class="progress" aria-hidden="true">
+          <li data-at="0.18">壱</li>
+          <li data-at="0.40">弐</li>
+          <li data-at="0.62">参</li>
+          <li data-at="0.83">肆</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ===== 物語 ===== -->
+    <section class="story" id="story">
+      <div class="inner">
+        <p class="sec-label reveal">Story</p>
+        <h2 class="sec-title reveal">四つの章、<br>ひとつの永遠。</h2>
+        <div class="story-grid">
+          <article class="story-card reveal">
+            <span class="kanji">壱</span>
+            <h3>永遠</h3>
+            <p>雷の神が治める島国・稲妻。将軍は、国を時の流れから守ることを己の使命とした。</p>
+          </article>
+          <article class="story-card reveal">
+            <span class="kanji">弐</span>
+            <h3>一心浄土</h3>
+            <p>心の内に築いた静かな世界で、本体は長い瞑想を続けている。外の世は、作り上げた人形が預かる。</p>
+          </article>
+          <article class="story-card reveal">
+            <span class="kanji">参</span>
+            <h3>無想の一太刀</h3>
+            <p>その一振りは山を割り、大地に深い傷を刻んだと語り継がれる。武の頂に立つ者の証。</p>
+          </article>
+          <article class="story-card reveal">
+            <span class="kanji">肆</span>
+            <h3>雷光</h3>
+            <p>旅人との出会いを経て、変わらぬことだけが永遠ではないと知る。国は再び動きはじめる。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== プロフィール ===== -->
+    <section class="profile" id="profile">
+      <div class="inner profile-inner">
+        <figure class="portrait reveal">
+          <img src="img/portrait.jpg" alt="雷電将軍の立ち絵" width="660" height="832" loading="lazy">
+          <figcaption>御建鳴神主尊大御所様</figcaption>
+        </figure>
+        <div class="profile-body">
+          <p class="sec-label reveal">Profile</p>
+          <h2 class="sec-title reveal">雷電将軍</h2>
+          <p class="stars reveal" aria-label="レアリティ星5">★★★★★</p>
+          <dl class="spec reveal">
+            <div><dt>元素</dt><dd><span class="electro">雷</span></dd></div>
+            <div><dt>武器</dt><dd>長柄武器</dd></div>
+            <div><dt>所属</dt><dd>稲妻幕府</dd></div>
+            <div><dt>誕生日</dt><dd>6月26日</dd></div>
+            <div><dt>命ノ星座</dt><dd>天下人座</dd></div>
+            <div><dt>声優</dt><dd>沢城みゆき</dd></div>
+          </dl>
+          <p class="profile-text reveal">
+            稲妻を統べる雷神。民からは「将軍様」と呼ばれ、厳かな威厳と、どこか浮世離れした佇まいをあわせ持つ。
+            甘いものには目がない、という意外な一面も。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 戦技 ===== -->
+    <section class="skills" id="skills">
+      <div class="inner">
+        <p class="sec-label reveal">Combat</p>
+        <h2 class="sec-title reveal">戦技</h2>
+        <div class="skill-list">
+          <article class="skill reveal">
+            <p class="skill-type">通常攻撃</p>
+            <h3>源流</h3>
+            <p>長柄武器による最大5段の連撃。重撃では力を溜め、一気に突き上げる。</p>
+          </article>
+          <article class="skill reveal">
+            <p class="skill-type">元素スキル</p>
+            <h3>神変・悪曜開眼</h3>
+            <p>雷の眼をひらき、周りの敵に雷ダメージ。仲間の元素爆発を強め、攻撃に合わせて追撃する。</p>
+          </article>
+          <article class="skill reveal">
+            <p class="skill-type">元素爆発</p>
+            <h3>奥義・夢想真説</h3>
+            <p>「無想の一太刀」で前方を断ち、しばらく刀で戦う。溜めた「願力」が多いほど威力が増す。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 誓い ===== -->
+    <section class="vow" id="vow">
+      <svg class="mark vow-mark" viewBox="0 0 100 100" aria-hidden="true"><use href="#tomoe"/></svg>
+      <p class="vow-text reveal">変わらぬものを、<br>永遠と呼ぶのか。</p>
+      <p class="vow-sub reveal">Is eternity what never changes?</p>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p>【実習】慶應義塾大学「Webデザインとマネジメント」授業課題として制作した非公式ファンサイトです。</p>
+    <p>キャラクター・画像の権利は © HoYoverse に帰属します。公式とは関係ありません。</p>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
